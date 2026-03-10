@@ -7,7 +7,6 @@ use tracing_subscriber::{
 };
 
 static LOG_GUARD: OnceLock<WorkerGuard> = OnceLock::new();
-static JSON_GUARD: OnceLock<WorkerGuard> = OnceLock::new();
 
 pub fn init_logging(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let log_dir = app.path().app_log_dir()?;
@@ -28,7 +27,7 @@ pub fn init_logging(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Er
         .with_verbose_entry(true)
         .with_targets(true)
         .with_writer(writer)
-        .with_filter(file_filter.clone());
+        .with_filter(file_filter);
 
     tracing_subscriber::registry()
         .with(stdout_layer)

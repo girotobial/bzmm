@@ -14,7 +14,7 @@ use settings::{delete_profile, get_app_version, get_settings, update_profile, up
 
 use crate::logging::init_logging;
 
-fn main() -> Result<(), tauri::Error> {
+fn main() {
     tauri::Builder::default()
         .setup(|app| {
             init_logging(app.handle()).expect("failed to initialize logging");
@@ -41,9 +41,8 @@ fn main() -> Result<(), tauri::Error> {
             get_app_version
         ])
         .run(tauri::generate_context!())
-        .map_err(|e| {
+        .unwrap_or_else(|e| {
             tracing::error!("Tauri could not start up due to {}", e);
-            e
-        })?;
-    Ok(())
+            panic!("Tauri failed to start");
+        });
 }
