@@ -4,10 +4,12 @@
 mod mods;
 mod settings;
 
+use tauri_plugin_log::{log, Target, TargetKind};
+
 use mods::handlers::get_enabled_mods;
 use mods::{
-    delete_mod, disable_mod, download_mod, enable_mod, get_downloaded_mods, get_mods,
-    queue_download, cancel_download, update_mod,
+    cancel_download, delete_mod, disable_mod, download_mod, enable_mod, get_downloaded_mods,
+    get_mods, queue_download, update_mod,
 };
 use settings::{delete_profile, get_app_version, get_settings, update_profile, update_settings};
 
@@ -15,6 +17,14 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .clear_targets()
+                .target(Target::new(TargetKind::LogDir { file_name: None }))
+                .target(Target::new(TargetKind::Stdout))
+                .level(log::LevelFilter::Debug)
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             get_settings,
             update_settings,
