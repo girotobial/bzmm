@@ -269,7 +269,7 @@ impl ModDownloader {
         }
 
         // Validate URL
-        tracing::info!("Download started for {} from URL: '{}'", mod_name, url);
+        tracing::debug!("Download started for {} from URL: '{}'", mod_name, url);
         if url.is_empty() || !url.starts_with("http") {
             tracing::error!("Invalid URL for {}: '{}'", mod_name, url);
             let err = ModError::InvalidUrl(format!("Invalid URL provided: {}", url));
@@ -302,7 +302,7 @@ impl ModDownloader {
             .and_then(|ct_len| ct_len.parse().ok())
             .unwrap_or(0u64);
 
-        tracing::info!("Starting download of {} bytes for {}", total_size, mod_name);
+        tracing::debug!("Starting download of {} bytes for {}", total_size, mod_name);
 
         // Check if cancelled before main download
         if cancel_token.is_cancelled() {
@@ -333,7 +333,7 @@ impl ModDownloader {
                 r
             }
             Err(e) => {
-                tracing::info!("GET request failed for {}: {}", mod_name, e);
+                tracing::warn!("GET request failed for {}: {}", mod_name, e);
                 let err = ModError::RequestError(e);
                 emit_error(&err);
                 return Err(err);
@@ -356,7 +356,7 @@ impl ModDownloader {
 
         use tokio::io::AsyncWriteExt;
 
-        tracing::info!("Downloading to path: {}", path.display());
+        tracing::debug!("Downloading to path: {}", path.display());
         while let Some(chunk) = stream.next().await {
             // Check if cancelled during download
             if cancel_token.is_cancelled() {
@@ -369,7 +369,7 @@ impl ModDownloader {
             let chunk = match chunk {
                 Ok(c) => c,
                 Err(e) => {
-                    tracing::info!("Download stream error for {}: {}", mod_name, e);
+                    tracing::error!("Download stream error for {}: {}", mod_name, e);
                     let err = ModError::RequestError(e);
                     emit_error(&err);
                     return Err(err);
@@ -377,7 +377,7 @@ impl ModDownloader {
             };
 
             if let Err(e) = file.write_all(&chunk).await {
-                tracing::info!("Failed to write chunk to file {}: {}", path.display(), e);
+                tracing::error!("Failed to write chunk to file {}: {}", path.display(), e);
                 let err = ModError::IoError(e);
                 emit_error(&err);
                 return Err(err);
@@ -471,7 +471,7 @@ impl ModDownloader {
         }
 
         // Emit completion event
-        tracing::info!(
+        tracing::debug!(
             "Download completed for {} - File size: {} bytes",
             mod_name,
             metadata.len()

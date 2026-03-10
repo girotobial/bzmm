@@ -64,7 +64,7 @@ impl Settings {
 
     #[tracing::instrument]
     pub fn load() -> Result<Self, String> {
-        tracing::trace!("Finding settings path");
+        tracing::debug!("Finding settings path");
         let path = Self::get_settings_path().ok_or_else(|| {
             let err = "Could not determine settings path";
             tracing::warn!(err);
@@ -82,7 +82,7 @@ impl Settings {
 
             serde_json::from_str(&content).map_err(|e| format!("Failed to parse settings: {}", e))
         } else {
-            tracing::info!("Settings path not found, creating new settings file");
+            tracing::warn!("Settings path not found, creating new settings file");
             let settings = Settings::default();
             settings.save()?;
             Ok(settings)
@@ -100,11 +100,14 @@ impl Settings {
     }
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn get_settings() -> Result<Settings, String> {
+    tracing::info!("Getting settings");
     Settings::load()
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn get_app_version() -> Result<AppVersion, String> {
     Ok(AppVersion {
@@ -112,6 +115,7 @@ pub async fn get_app_version() -> Result<AppVersion, String> {
     })
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn update_settings(update: SettingsUpdate) -> Result<Settings, String> {
     let mut settings = Settings::load()?;
@@ -126,6 +130,7 @@ pub async fn update_settings(update: SettingsUpdate) -> Result<Settings, String>
     Ok(settings)
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn update_profile(index: usize, profile: Profile) -> Result<Settings, String> {
     let mut settings = Settings::load()?;
@@ -140,6 +145,7 @@ pub async fn update_profile(index: usize, profile: Profile) -> Result<Settings, 
     Ok(settings)
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn delete_profile(index: usize) -> Result<Settings, String> {
     let mut settings = Settings::load()?;

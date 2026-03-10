@@ -1,10 +1,9 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod logging;
 mod mods;
 mod settings;
-
-use tauri_plugin_log::{log, Target, TargetKind};
 
 use mods::handlers::get_enabled_mods;
 use mods::{
@@ -13,18 +12,17 @@ use mods::{
 };
 use settings::{delete_profile, get_app_version, get_settings, update_profile, update_settings};
 
-fn main() {
+use crate::logging::init_logging;
+
+fn main() -> Result<(), tauri::Error> {
     tauri::Builder::default()
+        .setup(|app| {
+            init_logging(app.handle()).expect("failed to initialize logging");
+            tracing::info!("App Starting up");
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(
-            tauri_plugin_log::Builder::default()
-                .clear_targets()
-                .target(Target::new(TargetKind::LogDir { file_name: None }))
-                .target(Target::new(TargetKind::Stdout))
-                .level(log::LevelFilter::Debug)
-                .build(),
-        )
         .invoke_handler(tauri::generate_handler![
             get_settings,
             update_settings,
@@ -43,5 +41,9 @@ fn main() {
             get_app_version
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .map_err(|e| {
+            tracing::error!("Tauri could not start up due to {}", e);
+            e
+        })?;
+    Ok(())
 }

@@ -44,6 +44,7 @@ fn clean_existing_mod(extract_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn download_mod(
     app_handle: tauri::AppHandle,
@@ -400,7 +401,7 @@ pub async fn download_mod_with_cancellation(
 
         // Don't log as error for user-initiated cancellations
         if !error_msg.to_lowercase().contains("cancelled") {
-            tracing::info!("Download failed for {}: {}", filename, e);
+            tracing::warn!("Download failed for {}: {}", filename, e);
         } else {
             tracing::info!("Download cancelled for {}", filename);
         }

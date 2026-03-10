@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn get_enabled_mods(profile_name: String) -> Result<Vec<String>, String> {
     let settings = settings::Settings::load()?;
@@ -244,9 +245,17 @@ pub async fn get_downloaded_mods() -> Result<Vec<String>, String> {
 
     let mut downloaded_mods = Vec::new();
 
+    tracing::info!("Retrieving downloaded mods");
+
     if base_downloads_dir.exists() {
         // Iterate through the hashed subdirectories first
-        let hash_dir_entries = std::fs::read_dir(&base_downloads_dir).map_err(|e| e.to_string())?;
+        let hash_dir_entries = std::fs::read_dir(&base_downloads_dir).map_err(|e| {
+            tracing::error!(
+                download_path = &settings.download_path,
+                "Could not hash entries in download folder"
+            );
+            e.to_string()
+        })?;
         for hash_entry in hash_dir_entries.filter_map(Result::ok) {
             let xml_specific_path = hash_entry.path();
             // Ensure it's a directory (could be a stray file)
@@ -270,6 +279,11 @@ pub async fn get_downloaded_mods() -> Result<Vec<String>, String> {
                 }
             }
         }
+    } else {
+        tracing::info!(
+            download_path = &settings.download_path,
+            "Download path does not exist"
+        )
     }
 
     if !settings.sideload_path.is_empty() {

@@ -71,6 +71,7 @@ async fn find_mod_dir(
     )))
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn enable_mod(mod_name: String, profile_name: String) -> Result<ModResult, String> {
     let result: Result<ModResult, ModError> = async move {
@@ -149,6 +150,7 @@ pub async fn enable_mod(mod_name: String, profile_name: String) -> Result<ModRes
     }
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn disable_mod(mod_name: String, profile_name: String) -> Result<ModResult, String> {
     let result: Result<ModResult, ModError> = async move {
@@ -193,6 +195,7 @@ pub async fn disable_mod(mod_name: String, profile_name: String) -> Result<ModRe
     }
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn delete_mod(mod_name: String, profile_name: String) -> Result<ModResult, String> {
     let result: Result<ModResult, ModError> = async move {
@@ -237,6 +240,7 @@ pub async fn delete_mod(mod_name: String, profile_name: String) -> Result<ModRes
     }
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn update_mod(
     app_handle: AppHandle,

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tauri::Emitter;
 use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 
 const MAX_CONCURRENT_DOWNLOADS: usize = 2;
 
@@ -57,7 +58,10 @@ impl DownloadQueue {
         // Start processing - this spawns a task to avoid Send issues
         let queue_ref = self.clone();
         tokio::spawn(async move {
-            queue_ref.process_one_download(app_handle).await;
+            queue_ref
+                .process_one_download(app_handle)
+                .in_current_span()
+                .await;
         });
     }
 
