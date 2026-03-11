@@ -12,13 +12,9 @@ use std::path::PathBuf;
 #[tauri::command]
 pub async fn get_enabled_mods(profile_name: &str) -> Result<Vec<String>, String> {
     let settings = settings::Settings::load()?;
-    let mut enabled_mods = Vec::new();
 
     // Check enabled mods in the download folder
-    {
-        let mut enabled_download_mods = get_enabled_downloaded_mods(&settings, profile_name)?;
-        enabled_mods.append(&mut enabled_download_mods);
-    }
+    let mut enabled_mods = get_enabled_downloaded_mods(&settings, profile_name)?;
 
     // Check sideloaded mods
     {
