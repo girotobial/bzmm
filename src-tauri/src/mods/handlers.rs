@@ -4,7 +4,6 @@ use super::mod_download::is_mod_successfully_downloaded;
 use super::parser::ModParser;
 use super::sideload::scan_sideload_directory;
 use super::types::ModsResult;
-use crate::settings;
 use crate::state::AppState;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
