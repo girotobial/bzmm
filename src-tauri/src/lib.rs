@@ -1,5 +1,6 @@
 mod mods;
 mod settings;
+mod state;
 
 use mods::{
     delete_mod, disable_mod, download_mod, enable_mod, get_downloaded_mods, get_mods,
@@ -31,4 +32,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
