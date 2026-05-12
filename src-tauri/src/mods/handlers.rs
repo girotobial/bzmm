@@ -7,7 +7,7 @@ use super::types::ModsResult;
 use crate::settings;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[tauri::command]
 pub async fn get_enabled_mods(profile_name: &str) -> Result<Vec<String>, String> {
@@ -19,7 +19,7 @@ pub async fn get_enabled_mods(profile_name: &str) -> Result<Vec<String>, String>
     // Check sideloaded mods
     {
         let mut enabled_sideload_mods =
-            get_enabled_sideload_mods(&settings.sideload_path, profile_name)?;
+            check_directory_for_enabled_mods(settings.sideload_path.as_ref(), profile_name)?;
         enabled_mods.append(&mut enabled_sideload_mods);
     }
 
@@ -57,16 +57,8 @@ fn get_enabled_downloaded_mods(
 }
 
 #[inline]
-fn get_enabled_sideload_mods(
-    sideload_path: &str,
-    profile_name: &str,
-) -> Result<Vec<String>, String> {
-    let dir = PathBuf::from(sideload_path);
-    check_directory_for_enabled_mods(&dir, profile_name)
-}
-
 fn check_directory_for_enabled_mods(
-    directory: &PathBuf,
+    directory: &Path,
     profile_name: &str,
 ) -> Result<Vec<String>, String> {
     let mut enabled_mods = vec![];
