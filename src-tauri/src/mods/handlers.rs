@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn get_enabled_mods(profile_name: &str) -> Result<Vec<String>, String> {
     let settings = settings::Settings::load()?;
@@ -48,7 +49,7 @@ fn get_enabled_downloaded_mods(
     let repo_hash = &repo_hash[..6];
     let xml_specific_path = base_downloads_dir.join(repo_hash);
 
-    println!(
+    tracing::info!(
         "Checking for enabled mods within: {}",
         xml_specific_path.display()
     );
@@ -82,11 +83,13 @@ fn check_directory_for_enabled_mods(
     Ok(enabled_mods)
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
     let mut settings = settings::Settings::load()?;
 
     if profile_index >= settings.profiles.len() {
+        tracing::warn!(profile_index, "Profile index out of bounds");
         return Ok(ModsResult {
             categories: Vec::new(),
             error: Some("Profile index out of bounds".to_string()),
@@ -111,7 +114,7 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
                 if let Err(e) =
                     super::xml_cache::update_cache_path_in_settings(&mut settings, &url, &path)
                 {
-                    println!("Warning: Failed to update cache path in settings: {}", e);
+                    tracing::warn!(error = ?e, "Failed to update cache path in setting");
                 }
             }
 
@@ -122,16 +125,18 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
                     // Debug logging for each mod after update check
                     for category in &updated.categories {
                         for mod_entry in &category.mods {
-                            println!(
-                                "After update check - Mod: {}, Version: {}, New Version: {:?}",
-                                mod_entry.name, mod_entry.version, mod_entry.new_version
+                            tracing::debug!(
+                                mod_ = mod_entry.name,
+                                version = mod_entry.version,
+                                new_version = mod_entry.new_version,
+                                "After update check"
                             );
                         }
                     }
                     updated
                 }
                 Err(e) => {
-                    println!("Warning: Failed to check for updates: {}", e);
+                    tracing::warn!("Failed to check for updates: {}", e);
                     mods_file
                 }
             };
@@ -141,7 +146,7 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
         }
         Err(e) => {
             // Could not fetch from URL, try to load from cache
-            println!("Failed to load repository mods: {}", e);
+            tracing::warn!("Failed to load repository mods: {}", e);
             error = Some(format!("Failed to load repository XML: {}", e));
 
             // Try to find a cached XML file for this profile
@@ -156,7 +161,7 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
             if let Some(path) = cached_xml_path {
                 match super::xml_cache::XmlCache::load_xml(&path) {
                     Ok(cached_mods_file) => {
-                        println!("Successfully loaded cached XML from: {}", path.display());
+                        tracing::info!("Successfully loaded cached XML from: {}", path.display());
                         xml_loaded_from_cache = true;
 
                         // Check for updates using the cached file, passing the repo URL
@@ -167,8 +172,8 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
                         ) {
                             Ok(updated) => updated,
                             Err(e) => {
-                                println!(
-                                    "Warning: Failed to check for updates using cached XML: {}",
+                                tracing::warn!(
+                                    "Failed to check for updates using cached XML: {}",
                                     e
                                 );
                                 cached_mods_file
@@ -179,7 +184,7 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
                         categories.sort_by_key(|cat| cat.sort_order);
                     }
                     Err(cache_err) => {
-                        println!("Failed to load cached XML: {}", cache_err);
+                        tracing::error!("Failed to load cached XML: {}", cache_err);
                         error = Some(format!(
                             "Failed to load repository XML and could not read cache: {}",
                             e
@@ -187,7 +192,7 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
                     }
                 }
             } else {
-                println!("No cached XML available for URL: {}", url);
+                tracing::error!(url, "No cached XML available for");
                 error = Some(format!(
                     "Failed to load repository XML: {}. No cached version available.",
                     e
@@ -235,7 +240,7 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
                 }
             }
             Err(e) => {
-                println!("Failed to scan for deprecated mods: {}", e);
+                tracing::warn!("Failed to scan for deprecated mods: {}", e);
             }
         }
     }
@@ -251,7 +256,7 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
                 }
             }
             Err(e) => {
-                println!("Failed to scan sideload directory: {}", e);
+                tracing::warn!("Failed to scan sideload directory: {}", e);
             }
         }
     }
@@ -259,6 +264,7 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
     Ok(ModsResult { categories, error })
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn get_downloaded_mods() -> Result<Vec<String>, String> {
     let settings = settings::Settings::load()?;
@@ -266,9 +272,17 @@ pub async fn get_downloaded_mods() -> Result<Vec<String>, String> {
 
     let mut downloaded_mods = Vec::new();
 
+    tracing::info!("Retrieving downloaded mods");
+
     if base_downloads_dir.exists() {
         // Iterate through the hashed subdirectories first
-        let hash_dir_entries = std::fs::read_dir(&base_downloads_dir).map_err(|e| e.to_string())?;
+        let hash_dir_entries = std::fs::read_dir(&base_downloads_dir).map_err(|e| {
+            tracing::error!(
+                download_path = &settings.download_path,
+                "Could not hash entries in download folder"
+            );
+            e.to_string()
+        })?;
         for hash_entry in hash_dir_entries.filter_map(Result::ok) {
             let xml_specific_path = hash_entry.path();
             // Ensure it's a directory (could be a stray file)
@@ -292,6 +306,11 @@ pub async fn get_downloaded_mods() -> Result<Vec<String>, String> {
                 }
             }
         }
+    } else {
+        tracing::info!(
+            download_path = &settings.download_path,
+            "Download path does not exist"
+        )
     }
 
     if !settings.sideload_path.is_empty() {
