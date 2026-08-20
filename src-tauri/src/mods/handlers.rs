@@ -7,14 +7,32 @@ use super::types::ModsResult;
 use crate::settings;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[tracing::instrument]
 #[tauri::command]
-pub async fn get_enabled_mods(profile_name: String) -> Result<Vec<String>, String> {
+pub async fn get_enabled_mods(profile_name: &str) -> Result<Vec<String>, String> {
     let settings = settings::Settings::load()?;
+
+    // Check enabled mods in the download folder
+    let mut enabled_mods = get_enabled_downloaded_mods(&settings, profile_name)?;
+
+    // Check sideloaded mods
+    {
+        let mut enabled_sideload_mods =
+            check_directory_for_enabled_mods(settings.sideload_path.as_ref(), profile_name)?;
+        enabled_mods.append(&mut enabled_sideload_mods);
+    }
+
+    Ok(enabled_mods)
+}
+
+#[inline]
+fn get_enabled_downloaded_mods(
+    settings: &settings::Settings,
+    profile_name: &str,
+) -> Result<Vec<String>, String> {
     let base_downloads_dir = PathBuf::from(&settings.download_path);
-    let mut enabled_mods = Vec::new();
 
     // Find the profile to get the repo_url
     let profile = settings
@@ -23,7 +41,6 @@ pub async fn get_enabled_mods(profile_name: String) -> Result<Vec<String>, Strin
         .find(|p| p.name == profile_name)
         .ok_or_else(|| format!("Profile '{}' not found", profile_name))?;
 
-    // Calculate the XML-specific path for this profile
     let mut hasher = Sha256::new();
     hasher.update(profile.repo_url.as_bytes());
     let hash_result = hasher.finalize();
@@ -37,15 +54,25 @@ pub async fn get_enabled_mods(profile_name: String) -> Result<Vec<String>, Strin
         xml_specific_path.display()
     );
 
-    if xml_specific_path.exists() && xml_specific_path.is_dir() {
+    check_directory_for_enabled_mods(&xml_specific_path, profile_name)
+}
+
+#[inline]
+fn check_directory_for_enabled_mods(
+    directory: &Path,
+    profile_name: &str,
+) -> Result<Vec<String>, String> {
+    let mut enabled_mods = vec![];
+
+    if directory.exists() && directory.is_dir() {
         // Iterate within the specific XML source directory
-        let mod_dir_entries = std::fs::read_dir(&xml_specific_path).map_err(|e| e.to_string())?;
+        let mod_dir_entries = std::fs::read_dir(directory).map_err(|e| e.to_string())?;
         for mod_entry in mod_dir_entries.filter_map(Result::ok) {
             let mod_path = mod_entry.path(); // Path to the specific mod directory
             if mod_path.is_dir() {
                 if let Some(mod_name) = mod_path.file_name().and_then(|n| n.to_str()) {
                     // Check if this specific mod is enabled for the given profile
-                    if super::mod_utils::is_mod_enabled(&mod_path, &profile_name) {
+                    if super::mod_utils::is_mod_enabled(&mod_path, profile_name) {
                         enabled_mods.push(mod_name.to_string());
                     }
                 }
