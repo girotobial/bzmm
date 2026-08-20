@@ -1,14 +1,15 @@
+use super::deprecated::scan_for_deprecated_mods;
 use super::downloader::ModDownloader;
 use super::mod_download::is_mod_successfully_downloaded;
 use super::parser::ModParser;
 use super::sideload::scan_sideload_directory;
-use super::deprecated::scan_for_deprecated_mods;
 use super::types::ModsResult;
 use crate::settings;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn get_enabled_mods(profile_name: String) -> Result<Vec<String>, String> {
     let settings = settings::Settings::load()?;
@@ -31,7 +32,10 @@ pub async fn get_enabled_mods(profile_name: String) -> Result<Vec<String>, Strin
     let repo_hash = &repo_hash[..6];
     let xml_specific_path = base_downloads_dir.join(repo_hash);
 
-    println!("Checking for enabled mods within: {}", xml_specific_path.display());
+    tracing::info!(
+        "Checking for enabled mods within: {}",
+        xml_specific_path.display()
+    );
 
     if xml_specific_path.exists() && xml_specific_path.is_dir() {
         // Iterate within the specific XML source directory
@@ -52,18 +56,23 @@ pub async fn get_enabled_mods(profile_name: String) -> Result<Vec<String>, Strin
     Ok(enabled_mods)
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
     let mut settings = settings::Settings::load()?;
-    
+
     if profile_index >= settings.profiles.len() {
+        tracing::warn!(profile_index, "Profile index out of bounds");
         return Ok(ModsResult {
             categories: Vec::new(),
             error: Some("Profile index out of bounds".to_string()),
         });
     }
-    
-    let url = settings.profiles[profile_index].repo_url.trim_end_matches('/').to_string();
+
+    let url = settings.profiles[profile_index]
+        .repo_url
+        .trim_end_matches('/')
+        .to_string();
     let downloader = ModDownloader::new();
     let mut categories = Vec::new();
     let mut error = None;
@@ -75,52 +84,57 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
         Ok((mods_file, cache_path)) => {
             // Save the cache path if available
             if let Some(path) = cache_path {
-                if let Err(e) = super::xml_cache::update_cache_path_in_settings(&mut settings, &url, &path) {
-                    println!("Warning: Failed to update cache path in settings: {}", e);
+                if let Err(e) =
+                    super::xml_cache::update_cache_path_in_settings(&mut settings, &url, &path)
+                {
+                    tracing::warn!(error = ?e, "Failed to update cache path in setting");
                 }
             }
 
             // Pass the repo URL to check_for_updates
-            let updated_mods = match ModParser::check_for_updates(
-                &mods_file,
-                &download_path,
-                &url,
-            ) {
+            let updated_mods = match ModParser::check_for_updates(&mods_file, &download_path, &url)
+            {
                 Ok(updated) => {
                     // Debug logging for each mod after update check
                     for category in &updated.categories {
                         for mod_entry in &category.mods {
-                            println!("After update check - Mod: {}, Version: {}, New Version: {:?}",
-                                mod_entry.name, mod_entry.version, mod_entry.new_version);
+                            tracing::debug!(
+                                mod_ = mod_entry.name,
+                                version = mod_entry.version,
+                                new_version = mod_entry.new_version,
+                                "After update check"
+                            );
                         }
                     }
                     updated
-                },
+                }
                 Err(e) => {
-                    println!("Warning: Failed to check for updates: {}", e);
+                    tracing::warn!("Failed to check for updates: {}", e);
                     mods_file
                 }
             };
 
             categories = updated_mods.categories;
             categories.sort_by_key(|cat| cat.sort_order);
-        },
+        }
         Err(e) => {
             // Could not fetch from URL, try to load from cache
-            println!("Failed to load repository mods: {}", e);
+            tracing::warn!("Failed to load repository mods: {}", e);
             error = Some(format!("Failed to load repository XML: {}", e));
-            
+
             // Try to find a cached XML file for this profile
-            let cached_xml_path = if profile_index < settings.cached_xml_paths.len() && !settings.cached_xml_paths[profile_index].is_empty() {
+            let cached_xml_path = if profile_index < settings.cached_xml_paths.len()
+                && !settings.cached_xml_paths[profile_index].is_empty()
+            {
                 Some(PathBuf::from(&settings.cached_xml_paths[profile_index]))
             } else {
                 super::xml_cache::XmlCache::get_cache_path(&url)
             };
-            
+
             if let Some(path) = cached_xml_path {
                 match super::xml_cache::XmlCache::load_xml(&path) {
                     Ok(cached_mods_file) => {
-                        println!("Successfully loaded cached XML from: {}", path.display());
+                        tracing::info!("Successfully loaded cached XML from: {}", path.display());
                         xml_loaded_from_cache = true;
 
                         // Check for updates using the cached file, passing the repo URL
@@ -131,26 +145,35 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
                         ) {
                             Ok(updated) => updated,
                             Err(e) => {
-                                println!("Warning: Failed to check for updates using cached XML: {}", e);
+                                tracing::warn!(
+                                    "Failed to check for updates using cached XML: {}",
+                                    e
+                                );
                                 cached_mods_file
                             }
                         };
-                        
+
                         categories = updated_mods.categories;
                         categories.sort_by_key(|cat| cat.sort_order);
-                    },
+                    }
                     Err(cache_err) => {
-                        println!("Failed to load cached XML: {}", cache_err);
-                        error = Some(format!("Failed to load repository XML and could not read cache: {}", e));
+                        tracing::error!("Failed to load cached XML: {}", cache_err);
+                        error = Some(format!(
+                            "Failed to load repository XML and could not read cache: {}",
+                            e
+                        ));
                     }
                 }
             } else {
-                println!("No cached XML available for URL: {}", url);
-                error = Some(format!("Failed to load repository XML: {}. No cached version available.", e));
+                tracing::error!(url, "No cached XML available for");
+                error = Some(format!(
+                    "Failed to load repository XML: {}. No cached version available.",
+                    e
+                ));
             }
         }
     }
-    
+
     // Handle error message for cached data
     if xml_loaded_from_cache {
         // If there's an error message that already mentions cached data, keep it
@@ -160,10 +183,11 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
             }
         } else {
             // If no error, still inform user we're using cached data
-            error = Some("Using cached repository data. Could not connect to repository.".to_string());
+            error =
+                Some("Using cached repository data. Could not connect to repository.".to_string());
         }
     }
-    
+
     // Collect active mod names to identify deprecated mods
     let active_mod_names: HashSet<String> = categories
         .iter()
@@ -187,37 +211,33 @@ pub async fn get_mods(profile_index: usize) -> Result<ModsResult, String> {
                     // Add the deprecated mods to the categories list
                     categories.push(deprecated_category);
                 }
-            },
+            }
             Err(e) => {
-                println!("Failed to scan for deprecated mods: {}", e);
+                tracing::warn!("Failed to scan for deprecated mods: {}", e);
             }
         }
     }
-    
+
     // Add sideloaded mods
     if !settings.sideload_path.is_empty() {
         match scan_sideload_directory(&settings.sideload_path) {
             Ok(mut sideload_category) => {
                 if !sideload_category.mods.is_empty() {
-                    sideload_category.sort_order = categories
-                        .last()
-                        .map(|cat| cat.sort_order + 1)
-                        .unwrap_or(0);
+                    sideload_category.sort_order =
+                        categories.last().map(|cat| cat.sort_order + 1).unwrap_or(0);
                     categories.push(sideload_category);
                 }
-            },
+            }
             Err(e) => {
-                println!("Failed to scan sideload directory: {}", e);
+                tracing::warn!("Failed to scan sideload directory: {}", e);
             }
         }
     }
-    
-    Ok(ModsResult {
-        categories,
-        error,
-    })
+
+    Ok(ModsResult { categories, error })
 }
 
+#[tracing::instrument]
 #[tauri::command]
 pub async fn get_downloaded_mods() -> Result<Vec<String>, String> {
     let settings = settings::Settings::load()?;
@@ -225,15 +245,24 @@ pub async fn get_downloaded_mods() -> Result<Vec<String>, String> {
 
     let mut downloaded_mods = Vec::new();
 
+    tracing::info!("Retrieving downloaded mods");
+
     if base_downloads_dir.exists() {
         // Iterate through the hashed subdirectories first
-        let hash_dir_entries = std::fs::read_dir(&base_downloads_dir).map_err(|e| e.to_string())?;
+        let hash_dir_entries = std::fs::read_dir(&base_downloads_dir).map_err(|e| {
+            tracing::error!(
+                download_path = &settings.download_path,
+                "Could not hash entries in download folder"
+            );
+            e.to_string()
+        })?;
         for hash_entry in hash_dir_entries.filter_map(Result::ok) {
             let xml_specific_path = hash_entry.path();
             // Ensure it's a directory (could be a stray file)
             if xml_specific_path.is_dir() {
                 // Now iterate inside the XML-specific directory for mod directories
-                let mod_dir_entries = std::fs::read_dir(&xml_specific_path).map_err(|e| e.to_string())?;
+                let mod_dir_entries =
+                    std::fs::read_dir(&xml_specific_path).map_err(|e| e.to_string())?;
                 for mod_entry in mod_dir_entries.filter_map(Result::ok) {
                     let mod_path = mod_entry.path();
                     if mod_path.is_dir() {
@@ -250,6 +279,11 @@ pub async fn get_downloaded_mods() -> Result<Vec<String>, String> {
                 }
             }
         }
+    } else {
+        tracing::info!(
+            download_path = &settings.download_path,
+            "Download path does not exist"
+        )
     }
 
     if !settings.sideload_path.is_empty() {
